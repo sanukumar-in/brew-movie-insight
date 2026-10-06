@@ -52,6 +52,10 @@ export async function GET(request) {
         ?.name,
     });
   } catch (error) {
-    console.error("Error fetching movie details:", error);
+      console.error("Error fetching movie details:", error);
+      return NextResponse.json(
+      { error: "Unable to fetch movie details from TMDB" },
+      { status: 502 },
+      );
   }
 }

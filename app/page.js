@@ -67,7 +67,7 @@ export default function Home() {
           <span className="text-orange-500 text-2xl font-bold">Brew</span>
         </div>
         <a
-          href="https://github.com/idevRavn"
+          href="https://github.com/sanukumar-in"
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-2 px-4 py-2 border border-orange-500/30 
