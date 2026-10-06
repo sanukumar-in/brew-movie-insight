@@ -4,34 +4,66 @@ import { useState } from "react";
 import Image from "next/image";
 
 export default function Home() {
-  const [imdbId, setImdbId] = useState("");
+  const [query, setQuery] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [hasSearched, setHasSearched] = useState(false);
   const [movie, setMovie] = useState(null);
   const [sentiment, setSentiment] = useState(null);
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingMode, setLoadingMode] = useState("search");
 
   const handleSearch = async () => {
-    if (!imdbId.trim()) {
-      setError("Please enter an IMDb ID");
-      return;
-    }
-
-    if (!imdbId.match(/^tt\d{7,8}$/)) {
-      setError("Invalid format. Should look like tt0133093");
+    if (!query.trim()) {
+      setError("Please enter a movie title");
       return;
     }
 
     setIsLoading(true);
+    setLoadingMode("search");
     setError(null);
+    setSearchResults([]);
+    setHasSearched(false);
     setMovie(null);
     setSentiment(null);
     try {
-      const movieRes = await fetch(`/api/movie?id=${imdbId}`);
+      const searchRes = await fetch(
+        `/api/movie/search?q=${encodeURIComponent(query.trim())}`,
+      );
+      const searchData = await searchRes.json();
+
+      if (!searchRes.ok) {
+        setError(searchData.error || "Failed to search movies.");
+        return;
+      }
+
+      setSearchResults(searchData.results);
+      setHasSearched(true);
+    } catch (err) {
+      setError("Failed to search movies. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSelectMovie = async (selectedMovie) => {
+    setIsLoading(true);
+    setLoadingMode("analyze");
+    setError(null);
+    setSearchResults([]);
+    setHasSearched(false);
+    setQuery(selectedMovie.title);
+    setMovie(null);
+    setSentiment(null);
+
+    try {
+      const movieRes = await fetch(
+        `/api/movie?tmdbId=${encodeURIComponent(selectedMovie.id)}`,
+      );
       const movieData = await movieRes.json();
 
       if (!movieRes.ok) {
         setError(movieData.error || "Failed to fetch movie details.");
-        setIsLoading(false);
         return;
       }
 
@@ -53,7 +85,7 @@ export default function Home() {
         setSentiment(sentimentData);
       }
     } catch (err) {
-      setError("Failed to fetch movie details. Please try again.");
+      setError("Failed to analyze this movie. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -87,55 +119,81 @@ export default function Home() {
           <span className="text-orange-500">AI Movie</span> Insight
         </h1>
         <p className="text-white/50 text-lg">
-          Enter any IMDb ID to discover what audiences really think
+          Search for a movie to discover what audiences really think
         </p>
       </div>
 
       {/* Search */}
       <div className="max-w-2xl mx-auto px-4">
-        <div className="flex gap-3">
+        <form
+          className="flex gap-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            handleSearch();
+          }}
+        >
           <input
             type="text"
-            value={imdbId}
-            onChange={(e) => setImdbId(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-            placeholder="Enter IMDb ID (e.g. tt0133093)"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search by movie title"
+            aria-label="Movie title"
             className="flex-1 px-5 py-4 rounded-xl bg-white/10 border border-white/20 
                        text-white placeholder-white/30 focus:outline-none 
                        focus:border-orange-500 transition-all duration-200"
           />
           <button
-            onClick={handleSearch}
+            type="submit"
+            disabled={isLoading}
             className="px-8 py-4 bg-orange-500 hover:bg-orange-400 
-                             text-white font-semibold rounded-xl transition-all 
+                             text-white font-semibold rounded-xl transition-all
+                             disabled:opacity-50 disabled:cursor-not-allowed
                              duration-200 hover:scale-105 active:scale-95"
           >
-            Analyze
+            {isLoading && loadingMode === "search" ? "Searching..." : "Search"}
           </button>
-        </div>
+        </form>
 
-        {/* Example */}
-        <div className="mt-4 flex gap-4 justify-center">
-          <span className="text-white/30 text-sm">Try:</span>
-          <button
-            onClick={() => setImdbId("tt30476518")}
-            className="text-orange-400 hover:text-orange-300 text-sm underline underline-offset-2"
-          >
-            tt30476518
-          </button>
-          <button
-            onClick={() => setImdbId("tt2798920")}
-            className="text-orange-400 hover:text-orange-300 text-sm underline underline-offset-2"
-          >
-            tt2798920
-          </button>
-          <button
-            onClick={() => setImdbId("tt1213644")}
-            className="text-orange-400 hover:text-orange-300 text-sm underline underline-offset-2"
-          >
-            tt1213644
-          </button>
-        </div>
+        {searchResults.length > 0 && (
+          <div className="mt-4 overflow-hidden rounded-xl border border-white/10 bg-[#141414]">
+            {searchResults.map((result) => (
+              <button
+                key={result.id}
+                type="button"
+                onClick={() => handleSelectMovie(result)}
+                className="flex w-full items-center gap-4 border-b border-white/10 p-3 text-left last:border-b-0 hover:bg-white/5"
+              >
+                {result.poster ? (
+                  <Image
+                    src={result.poster}
+                    alt=""
+                    width={48}
+                    height={72}
+                    className="h-[72px] w-12 rounded object-cover"
+                  />
+                ) : (
+                  <div className="flex h-[72px] w-12 flex-shrink-0 items-center justify-center rounded bg-white/10 text-xs text-white/40">
+                    No poster
+                  </div>
+                )}
+                <span>
+                  <span className="block font-medium text-white">
+                    {result.title}
+                  </span>
+                  <span className="mt-1 block text-sm text-white/50">
+                    {result.release_year || "Release date unknown"}
+                  </span>
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {hasSearched && searchResults.length === 0 && !isLoading && (
+          <p className="mt-4 text-center text-sm text-white/50">
+            No movies found. Try another title.
+          </p>
+        )}
       </div>
 
       {/* Error */}
@@ -151,20 +209,28 @@ export default function Home() {
               className="w-10 h-10 border-2 border-orange-500 border-t-transparent 
                     rounded-full animate-spin"
             />
-            <p className="text-white/50">Analyzing movie...</p>
+            <p className="text-white/50">
+              {loadingMode === "search" ? "Searching movies..." : "Analyzing movie..."}
+            </p>
           </div>
         )}
 
         {movie && (
           <div className="flex gap-8">
             {/* Poster */}
-            <Image
-              src={movie.poster}
-              alt={movie.title}
-              width={192}
-              height={288}
-              className="rounded-xl object-cover flex-shrink-0"
-            />
+            {movie.poster ? (
+              <Image
+                src={movie.poster}
+                alt={movie.title}
+                width={192}
+                height={288}
+                className="rounded-xl object-cover flex-shrink-0"
+              />
+            ) : (
+              <div className="flex h-72 w-48 flex-shrink-0 items-center justify-center rounded-xl bg-white/10 text-white/40">
+                No poster
+              </div>
+            )}
 
             {/* Details */}
             <div className="flex-1">
