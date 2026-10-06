@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Image from "next/image";
 
 export default function Home() {
@@ -12,6 +12,20 @@ export default function Home() {
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMode, setLoadingMode] = useState("search");
+  const activeRequest = useRef(null);
+
+  const handleReset = () => {
+    activeRequest.current?.abort();
+    activeRequest.current = null;
+    setQuery("");
+    setSearchResults([]);
+    setHasSearched(false);
+    setMovie(null);
+    setSentiment(null);
+    setError(null);
+    setIsLoading(false);
+    setLoadingMode("search");
+  };
 
   const handleSearch = async () => {
     if (!query.trim()) {
@@ -19,6 +33,9 @@ export default function Home() {
       return;
     }
 
+    activeRequest.current?.abort();
+    const controller = new AbortController();
+    activeRequest.current = controller;
     setIsLoading(true);
     setLoadingMode("search");
     setError(null);
@@ -29,9 +46,11 @@ export default function Home() {
     try {
       const searchRes = await fetch(
         `/api/movie/search?q=${encodeURIComponent(query.trim())}`,
+        { signal: controller.signal },
       );
       const searchData = await searchRes.json();
 
+      if (controller.signal.aborted) return;
       if (!searchRes.ok) {
         setError(searchData.error || "Failed to search movies.");
         return;
@@ -40,13 +59,21 @@ export default function Home() {
       setSearchResults(searchData.results);
       setHasSearched(true);
     } catch (err) {
-      setError("Failed to search movies. Please try again.");
+      if (err.name !== "AbortError") {
+        setError("Failed to search movies. Please try again.");
+      }
     } finally {
-      setIsLoading(false);
+      if (activeRequest.current === controller) {
+        activeRequest.current = null;
+        setIsLoading(false);
+      }
     }
   };
 
   const handleSelectMovie = async (selectedMovie) => {
+    activeRequest.current?.abort();
+    const controller = new AbortController();
+    activeRequest.current = controller;
     setIsLoading(true);
     setLoadingMode("analyze");
     setError(null);
@@ -59,9 +86,11 @@ export default function Home() {
     try {
       const movieRes = await fetch(
         `/api/movie?tmdbId=${encodeURIComponent(selectedMovie.id)}`,
+        { signal: controller.signal },
       );
       const movieData = await movieRes.json();
 
+      if (controller.signal.aborted) return;
       if (!movieRes.ok) {
         setError(movieData.error || "Failed to fetch movie details.");
         return;
@@ -72,6 +101,7 @@ export default function Home() {
       const sentimentRes = await fetch(`/api/sentiment`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           title: movieData.title,
           plot: movieData.plot,
@@ -81,13 +111,18 @@ export default function Home() {
       });
 
       const sentimentData = await sentimentRes.json();
-      if (sentimentRes.ok) {
+      if (!controller.signal.aborted && sentimentRes.ok) {
         setSentiment(sentimentData);
       }
     } catch (err) {
-      setError("Failed to analyze this movie. Please try again.");
+      if (err.name !== "AbortError") {
+        setError("Failed to analyze this movie. Please try again.");
+      }
     } finally {
-      setIsLoading(false);
+      if (activeRequest.current === controller) {
+        activeRequest.current = null;
+        setIsLoading(false);
+      }
     }
   };
 
@@ -153,6 +188,23 @@ export default function Home() {
             {isLoading && loadingMode === "search" ? "Searching..." : "Search"}
           </button>
         </form>
+
+        {(query ||
+          searchResults.length > 0 ||
+          hasSearched ||
+          movie ||
+          error ||
+          isLoading) && (
+          <div className="mt-4 text-center">
+            <button
+              type="button"
+              onClick={handleReset}
+              className="text-sm text-white/50 transition-colors hover:text-orange-400"
+            >
+              ← Back to search
+            </button>
+          </div>
+        )}
 
         {searchResults.length > 0 && (
           <div className="mt-4 overflow-hidden rounded-xl border border-white/10 bg-[#141414]">
